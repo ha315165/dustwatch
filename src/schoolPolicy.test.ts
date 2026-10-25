@@ -11,7 +11,7 @@ import {
   FICTIONAL_DEMO_POLICY,
   evaluateActivityPolicy,
 } from './schoolPolicy.ts';
-import { RawHourlyVariables } from './types.ts';
+import { RawHourlyVariables, SchoolPolicyConfig } from './types.ts';
 
 test('Heat Index: calculates correct values under moderate and extreme conditions', () => {
   // 1. Moderate heat: 30°C and 50% RH -> ~31°C (Caution)
