@@ -22,6 +22,41 @@ import { SchoolPolicyConfig } from './types.ts';
 import { parseAndEvaluateCsv } from './evaluation.ts';
 import { exportSnapshotJson, importSnapshotJson } from './dataService.ts';
 
+test('Backtest: trained-model column is populated only when predictRisk produces a model score', () => {
+  const synthetic = generateSyntheticHindcastData(2, [CITIES[0]]);
+  const model: ModelFileConfig = {
+    model_name: 'backtest_test_model',
+    model_type: 'logistic_regression',
+    version: '1.0',
+    trained_on: 'Synthetic test fixture',
+    trained_date: '2026-10-01',
+    feature_names: ['dust', 'wind_speed_10m'],
+    coefficients: [0.02, 0.05],
+    intercept: -3,
+    scaler: { mean: [100, 20], scale: [50, 10] },
+    probability_cutoffs: { moderate: 0.3, high: 0.6, very_high: 0.8 },
+  };
+
+  const modelPredictions = buildHourlyPredictions(synthetic, model);
+  assert.ok(modelPredictions.length > 0);
+  assert.ok(
+    modelPredictions.some((p) => p.model_level !== ''),
+    'A valid model with available required features should produce model predictions'
+  );
+
+  // Force a required feature to be unavailable for every hour. predictRisk then
+  // returns the baseline result without modelScore; the backtest column must stay blank.
+  const missingFeatureData = generateSyntheticHindcastData(2, [CITIES[0]]);
+  const cityData = missingFeatureData[CITIES[0].id];
+  cityData.airQuality.hourly.dust = cityData.airQuality.hourly.dust.map(() => null);
+  const fallbackPredictions = buildHourlyPredictions(missingFeatureData, model);
+  assert.ok(fallbackPredictions.length > 0);
+  assert.ok(
+    fallbackPredictions.every((p) => p.model_level === ''),
+    'Baseline fallback must never be labelled as a trained-model prediction'
+  );
+});
+
 test('Backtest: generates synthetic hindcast data and drops first 12 hours for persistence', () => {
   const hindcastData = generateSyntheticHindcastData(2, CITIES.slice(0, 2));
   const predictions = buildHourlyPredictions(hindcastData, null);
