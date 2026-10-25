@@ -46,6 +46,44 @@ import {
 import { extract12Hours, getCurrentDubaiHour } from '../dataService.ts';
 import { getSchoolModeAdvice } from '../geminiService.ts';
 
+const VALID_POLICY_ACTIONS: SchoolRecommendedAction[] = ['normal', 'modified', 'indoor_only', 'suspend'];
+
+function validateStoredSchoolPolicy(value: unknown): SchoolPolicyConfig | null {
+  if (!value || typeof value !== 'object') return null;
+  const policy = value as Partial<SchoolPolicyConfig>;
+  if (
+    typeof policy.isConfigured !== 'boolean' ||
+    typeof policy.schoolName !== 'string' ||
+    typeof policy.policyVersion !== 'string' ||
+    typeof policy.effectiveDate !== 'string' ||
+    !Array.isArray(policy.rules) ||
+    !Array.isArray(policy.precedenceOrder)
+  ) return null;
+
+  const validMetrics = ['dust', 'pm10', 'pm2_5', 'temperature_2m', 'relative_humidity_2m', 'heat_index', 'wind_speed_10m', 'wind_gusts_10m', 'visibility'];
+  const validOperators = ['>', '>=', '<', '<=', '=='];
+  const rulesValid = policy.rules.every((rule) => {
+    if (!rule || typeof rule !== 'object') return false;
+    return typeof rule.id === 'string' &&
+      typeof rule.name === 'string' &&
+      typeof rule.activity === 'string' &&
+      ['all', 'break', 'pe', 'lunch_other'].includes(rule.activity) &&
+      typeof rule.metric === 'string' && validMetrics.includes(rule.metric) &&
+      typeof rule.operator === 'string' && validOperators.includes(rule.operator) &&
+      typeof rule.threshold === 'number' && Number.isFinite(rule.threshold) &&
+      typeof rule.unit === 'string' &&
+      typeof rule.recommendedAction === 'string' && VALID_POLICY_ACTIONS.includes(rule.recommendedAction) &&
+      typeof rule.severity === 'number' && Number.isFinite(rule.severity);
+  });
+
+  const precedenceValid = policy.precedenceOrder.every(
+    (action) => typeof action === 'string' && VALID_POLICY_ACTIONS.includes(action)
+  );
+  if (!rulesValid || !precedenceValid) return null;
+
+  return policy as SchoolPolicyConfig;
+}
+
 interface SchoolModeScreenProps {
   outlooks: Record<string, CityOutlook>;
   rawCityData: Record<string, RawCityData>;
@@ -65,8 +103,9 @@ export const SchoolModeScreen: React.FC<SchoolModeScreenProps> = ({
   schoolPolicy: propSchoolPolicy,
   onUpdateSchoolPolicy,
 }) => {
-  const currentOutlook = outlooks[selectedCityId] || outlooks[APP_CONFIG.defaultSelectedCityId];
-  const currentRaw = rawCityData[selectedCityId] || rawCityData[APP_CONFIG.defaultSelectedCityId];
+  // Never substitute another city's readings when the selected city's data is missing.
+  const currentOutlook = outlooks[selectedCityId];
+  const currentRaw = rawCityData[selectedCityId];
 
   // Activities: Show Break and PE only (Lunch behind config.schoolActivities, off by default)
   const showLunch = APP_CONFIG.schoolActivities?.showLunch ?? false;
@@ -96,7 +135,11 @@ export const SchoolModeScreen: React.FC<SchoolModeScreenProps> = ({
     if (propSchoolPolicy) return propSchoolPolicy;
     try {
       const saved = localStorage.getItem('dustwatch_school_policy');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = validateStoredSchoolPolicy(JSON.parse(saved));
+        if (parsed) return parsed;
+        localStorage.removeItem('dustwatch_school_policy');
+      }
     } catch {
       // ignore
     }

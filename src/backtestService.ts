@@ -323,7 +323,12 @@ export function buildHourlyPredictions(
       if (activeModel) {
         try {
           const modelRes = predictRisk(h % 12, rawVars, activeModel);
-          modelLevel = modelRes.category;
+          // predictRisk intentionally falls back to the baseline when model configuration
+          // is invalid or a required model feature is missing. Only label a prediction as
+          // trained-model output when the model actually produced a modelScore.
+          if (typeof modelRes.modelScore === 'number' && Number.isFinite(modelRes.modelScore)) {
+            modelLevel = modelRes.modelCategory ?? '';
+          }
         } catch {
           modelLevel = '';
         }

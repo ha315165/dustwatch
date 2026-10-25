@@ -343,6 +343,20 @@ export function evaluateActivityPolicy(
     (r) => r.activity === activity || r.activity === 'all'
   );
 
+  // A configured policy with no rules for this activity cannot establish that
+  // the activity meets policy criteria.
+  if (relevantRules.length === 0) {
+    return {
+      recommendedAction: 'normal',
+      actionTitle: 'No applicable rules for this activity',
+      primaryGuidance: 'No configured school policy rules apply to this activity. Confirm the applicable policy before treating this as cleared.',
+      reason: 'The configured policy has no rules for the selected activity.',
+      triggeredRules: [],
+      conflictingRules: false,
+      dataMissingForAssessment: false,
+    };
+  }
+
   const triggeredResults: TriggeredRuleResult[] = [];
   let criticalDataMissing = false;
 
@@ -404,8 +418,15 @@ export function evaluateActivityPolicy(
     };
   }
 
-  // Apply precedence order
-  // Precedence order: e.g. ['suspend', 'indoor_only', 'modified', 'normal']
+  // Apply precedence order. If a triggered action is absent from the configured
+  // order, fail safely to the most protective triggered action instead of defaulting
+  // to "normal" or silently choosing a less protective action.
+  const actionSeverity: Record<SchoolRecommendedAction, number> = {
+    normal: 0,
+    modified: 1,
+    indoor_only: 2,
+    suspend: 3,
+  };
   let winningAction: SchoolRecommendedAction = 'normal';
   let winningRuleResult: TriggeredRuleResult | null = null;
   let conflicting = false;
@@ -418,6 +439,18 @@ export function evaluateActivityPolicy(
       matches.sort((a, b) => b.rule.severity - a.rule.severity);
       winningRuleResult = matches[0];
       break;
+    }
+  }
+
+  if (!winningRuleResult) {
+    const safestTriggered = [...actuallyTriggered].sort(
+      (a, b) => actionSeverity[b.rule.recommendedAction] - actionSeverity[a.rule.recommendedAction] ||
+        b.rule.severity - a.rule.severity
+    )[0];
+    if (safestTriggered) {
+      winningRuleResult = safestTriggered;
+      winningAction = safestTriggered.rule.recommendedAction;
+      conflicting = true;
     }
   }
 

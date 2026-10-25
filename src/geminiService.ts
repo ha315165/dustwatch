@@ -272,10 +272,7 @@ export async function getSchoolModeAdvice(
 
   // If policy is unconfigured or required data is missing for assessment,
   // return deterministic fallback guidance immediately without invoking Gemini
-  if (
-    assessment.dataMissingForAssessment &&
-    (!assessment.triggeredRules || assessment.triggeredRules.length === 0)
-  ) {
+  if (assessment.dataMissingForAssessment) {
     return {
       summary:
         fallbackSummary ||

@@ -11,7 +11,7 @@ import {
   FICTIONAL_DEMO_POLICY,
   evaluateActivityPolicy,
 } from './schoolPolicy.ts';
-import { RawHourlyVariables } from './types.ts';
+import { RawHourlyVariables, SchoolPolicyConfig } from './types.ts';
 
 test('Heat Index: calculates correct values under moderate and extreme conditions', () => {
   // 1. Moderate heat: 30°C and 50% RH -> ~31°C (Caution)
@@ -144,4 +144,44 @@ test('School Policy: missing critical metric flags assessment unavailable and ne
   assert.equal(breakRes.dataMissingForAssessment, true);
   assert.equal(breakRes.actionTitle, 'Assessment unavailable: required data is missing');
   assert.ok(breakRes.primaryGuidance.includes('Review the applicable school policy'));
+});
+
+test('School Policy: configured policy with no applicable rules is not labelled criteria met', () => {
+  const raw: RawHourlyVariables = {
+    time: '2026-10-21T10:00',
+    temperature_2m: 32,
+    relative_humidity_2m: 40,
+    pm10: 100,
+    pm2_5: 30,
+    dust: 50,
+    wind_speed_10m: 15,
+    wind_gusts_10m: 25,
+    wind_direction_10m: 300,
+    visibility: 9000,
+    aerosol_optical_depth: 0.3,
+  };
+  const policy = { ...FICTIONAL_DEMO_POLICY, rules: FICTIONAL_DEMO_POLICY.rules.filter((r) => r.activity === 'lunch_other') };
+  const result = evaluateActivityPolicy(raw, calculateHeatIndex(32, 40), policy, 'break');
+  assert.equal(result.actionTitle, 'No applicable rules for this activity');
+  assert.ok(result.primaryGuidance.includes('Confirm the applicable policy'));
+});
+
+test('School Policy: incomplete precedence cannot downgrade an unlisted restrictive action to normal', () => {
+  const raw: RawHourlyVariables = {
+    time: '2026-10-21T12:00',
+    temperature_2m: 32,
+    relative_humidity_2m: 50,
+    pm10: 300,
+    pm2_5: 90,
+    dust: 180,
+    wind_speed_10m: 20,
+    wind_gusts_10m: 30,
+    wind_direction_10m: 320,
+    visibility: 4000,
+    aerosol_optical_depth: 0.8,
+  };
+  const policy = { ...FICTIONAL_DEMO_POLICY, precedenceOrder: ['normal'] as SchoolPolicyConfig['precedenceOrder'] };
+  const result = evaluateActivityPolicy(raw, calculateHeatIndex(32, 50), policy, 'pe');
+  assert.ok(['modified', 'indoor_only', 'suspend'].includes(result.recommendedAction));
+  assert.equal(result.conflictingRules, true);
 });
